@@ -585,6 +585,24 @@ button.fp:hover, button.fp[aria-pressed="true"] { background: color-mix(in srgb,
 #vq { width: min(100%, 320px); margin-bottom: 8px; }
 
 /* 原片精聽播放器 */
+.stage-top { display: flex; flex-direction: column; gap: 12px; }
+.lec-grid .list { position: relative; }
+@media (max-width: 860px) {
+  /* 手機：影片＋目前這一句固定在導覽列下方，往下捲看清單時仍看得到 */
+  .lec-grid .stage { display: contents; }
+  .lec-grid .stage > * { margin-bottom: 10px; }
+  .stage-top {
+    position: sticky; top: calc(var(--tb, 0px) + env(safe-area-inset-top, 0px)); z-index: 6;
+    gap: 6px; padding: 6px 0 8px; background: var(--bg); box-shadow: 0 8px 12px -10px rgba(0,0,0,.6);
+  }
+  .stage-top .now { min-height: 0; padding: 6px 10px; }
+  .stage-top .now .en { font-size: 16px; line-height: 1.6; }
+  .stage-top .now .zh { font-size: 14.5px; }
+  .seekbar { height: 10px; }
+  .seekbar .tick { height: 16px; }
+  .lec-grid .list { max-height: max(180px, calc(100dvh - var(--tb, 0px) - var(--st, 320px) - 70px)); }
+  .lec-grid .panel { scroll-margin-top: calc(var(--tb, 0px) + var(--st, 320px)); }
+}
 .seekbar { position: relative; height: 14px; background: rgba(255,255,255,.07); border-radius: 999px; cursor: pointer; }
 .seekbar .fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; pointer-events: none; }
 .seekbar .tick { position: absolute; top: -3px; width: 3px; height: 20px; margin-left: -1px; background: var(--fg); border: 0; padding: 0; border-radius: 2px; cursor: pointer; opacity: .75; }
@@ -2067,14 +2085,16 @@ function renderLecture(app, key) {
   ${embed ? "" : `<p class="hint">這個版本不能內嵌影片：點時間會在 YouTube 從那一秒播放；點句子可以展開精讀（點字查詞、收藏生字）。完整的循環、跟讀、聽寫請用網站版。</p>`}
   <div class="lec-grid ${embed ? "" : "noembed"}">
     ${embed ? `<div class="stage">
+      <div class="stage-top">
       <div class="video"><div id="ytp"></div></div>
       <div class="seekbar" id="seekbar" aria-hidden="true"><div class="fill" id="sbFill"></div></div>
+      <div class="now" id="now" aria-live="polite"><div class="en" id="nowEn">按播放後，這裡會顯示目前這一句；點英文單字可以查詞、收藏。</div><div class="zh" id="nowZh"></div></div>
+      </div>
       <div class="modes" role="tablist" aria-label="學習模式">
         ${[["listen", "泛聽"], ["study", "精聽"], ["shadow", "跟讀"], ["dictate", "聽寫"]].map(([m, n]) => `<button class="btn small" role="tab" data-mode="${m}" aria-selected="${ls.mode === m}">${n}</button>`).join("")}
         <span class="sep"></span>
         <span class="seg" role="group" aria-label="字幕顯示">${[["both", "雙語"], ["en", "英"], ["zh", "中"], ["none", "隱藏"]].map(([d, n]) => `<button class="btn small" data-disp="${d}" aria-pressed="${ls.disp === d}">${n}</button>`).join("")}</span>
       </div>
-      <div class="now" id="now" aria-live="polite"><div class="en" id="nowEn">按播放後，這裡會顯示目前這一句；點英文單字可以查詞、收藏。</div><div class="zh" id="nowZh"></div></div>
       <div class="modepanel" id="modepanel"></div>
       <div class="controls">
         <button class="btn small" id="prev" title="鍵盤 ←">上一句</button>
@@ -2164,11 +2184,16 @@ function renderLecture(app, key) {
     $("#nowEn").innerHTML = hideEn ? (ls.mode === "dictate" ? `<span class="muted">（聽寫中，英文先藏起來）</span>` : "") : wordsHtml(enOf(c), ls.active) + (c[4] && !ls.auto ? ` <span class="fixmark" title="已校正，原始自動字幕：${esc(c[4])}">✎ 已校正</span>` : "");
     $("#nowZh").textContent = hideZh ? "" : c[2];
   }
+  function scrollListTo(r, page) {
+    const top = r.offsetTop - (list.clientHeight - r.offsetHeight) / 2;  // .list 是 position: relative
+    if (list.scrollHeight > list.clientHeight + 4) list.scrollTo({ top: Math.max(0, top), behavior: page ? "auto" : "smooth" });
+    if (page) r.scrollIntoView({ block: "center" });  // 只有從錨點開啟時才捲動整頁
+  }
   function mark(quiet) {
     paintNow();
     list.querySelectorAll(".row.active").forEach((r) => r.classList.remove("active"));
     const r = list.querySelector(`[data-i="${ls.active}"]`);
-    if (r) { r.classList.add("active"); if (!quiet) r.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    if (r) { r.classList.add("active"); if (!quiet) scrollListTo(r); }
   }
   document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { ls.tab = b.dataset.tab; render(); }));
   $("#search").addEventListener("input", render);
@@ -2234,7 +2259,7 @@ function renderLecture(app, key) {
     if (embed) drawTicks();
     if (pendingStudy != null && cues[pendingStudy]) {
       const k = pendingStudy; pendingStudy = null; openStudy(k);
-      const r = list.querySelector(`[data-i="${k}"]`); if (r) { r.classList.add("active"); r.scrollIntoView({ block: "center" }); }
+      const r = list.querySelector(`[data-i="${k}"]`); if (r) { r.classList.add("active"); scrollListTo(r, true); }
     }
   }).catch(() => { list.innerHTML = `<div class="msg">字幕檔讀不到。若是直接用瀏覽器打開本機檔案，請改用網頁伺服器開啟（例如 GitHub Pages）。</div>`; });
 
@@ -2408,6 +2433,9 @@ function renderLecture(app, key) {
     }
   };
   paintMode();
+  // 手機：字幕清單高度＝畫面扣掉導覽列與固定的影片區塊
+  const st = $(".stage-top");
+  if (st && window.ResizeObserver) new ResizeObserver(() => document.documentElement.style.setProperty("--st", st.offsetHeight + "px")).observe(st);
   lecKeys = (e) => {
     if (e.key === "ArrowLeft") { e.preventDefault(); $("#prev")?.click(); }
     if (e.key === "ArrowRight") { e.preventDefault(); $("#next")?.click(); }
@@ -2501,6 +2529,14 @@ function learnRoute(h, app) {
   return null;
 }
 touchDay(); save(); checkBadges();
+// 導覽列高度（手機上會換行）給固定在頂端的影片區塊對齊用
+(() => {
+  const tb = document.querySelector(".topbar");
+  if (!tb) return;
+  const set = () => document.documentElement.style.setProperty("--tb", tb.offsetHeight + "px");
+  set();
+  if (window.ResizeObserver) new ResizeObserver(set).observe(tb);
+})();
 
 route();
 paintStatus();
